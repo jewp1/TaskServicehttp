@@ -1,13 +1,13 @@
 package api
 
 import (
-	"ApiService/internal/service"
+	"ApiService/internal/http"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
 type Router struct {
-	Service service.Service
+	TaskHandler *http.TaskHandler
 }
 
 func NewRouter(r *Router, token string) *fiber.App {
@@ -19,12 +19,9 @@ func NewRouter(r *Router, token string) *fiber.App {
 		ExposeHeaders: "Link",
 		MaxAge:        300,
 	}))
-	app.Get("/task/:username", r.Service.GetTasksByUsername)
-	app.Get("/taskID/:id", r.Service.GetTaskById)
-	app.Post("/user", r.Service.CreateUser)
-	app.Post("/task", r.Service.CreateTask)
-	app.Put("/task/:id", r.Service.UpdateTask)
-	app.Delete("/task/:id", r.Service.DeleteTask)
-	app.Delete("/user/:user_id", r.Service.DeleteUser)
+	app.Get("/taskID/:id", r.TaskHandler.GetTaskById)
+	app.Post("/task", r.TaskHandler.CreateTask)
+	app.Put("/task/:id", r.TaskHandler.UpdateTask)
+	app.Delete("/task/:id", r.TaskHandler.DeleteTask)
 	return app
 }

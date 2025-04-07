@@ -3,6 +3,7 @@ package main
 import (
 	"ApiService/internal/api"
 	"ApiService/internal/config"
+	"ApiService/internal/http"
 	"ApiService/internal/logger"
 	"ApiService/internal/repo"
 	"ApiService/internal/service"
@@ -27,7 +28,7 @@ func main() {
 		log.Fatal(errors.Wrap(err, "fail to load config"))
 	}
 
-	newRepository, err := repo.NewRepo(context.Background(), cfg.PostgreSQL)
+	newRepository, pool, err := repo.NewRepo(context.Background(), cfg.PostgreSQL)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "fail to init repository"))
 	}
@@ -37,9 +38,12 @@ func main() {
 		log.Fatal(errors.Wrap(err, "error init logger"))
 	}
 
-	newService := service.NewService(newRepository, logger)
+	taskService := service.NewService(newRepository, logger)
+	taskHandler := http.NewTaskHandler(taskService, logger)
 
-	app := api.NewRouter(&api.Router{Service: newService}, cfg.Rest.Token)
+	router := &api.Router{TaskHandler: taskHandler}
+
+	app := api.NewRouter(router, cfg.Rest.Token)
 
 	go func() {
 		logger.Infof("Starting http server on %s", cfg.Rest.ListenAddr)
@@ -59,6 +63,6 @@ func main() {
 	}
 
 	logger.Info("Closing database connection pool...")
-	newRepository.Close()
+	repo.Close(pool)
 	logger.Info("Server stopped gracefully")
 }

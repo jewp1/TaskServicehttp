@@ -1,194 +1,77 @@
 package service
 
 import (
-	"ApiService/internal/dto"
 	"ApiService/internal/repo"
-	"github.com/gofiber/fiber/v2"
+	"context"
+	"errors"
 	"go.uber.org/zap"
-	"strconv"
 )
 
-type Service interface {
-	CreateTask(ctx *fiber.Ctx) error
-	CreateUser(ctx *fiber.Ctx) error
-	GetTasksByUsername(ctx *fiber.Ctx) error
-	GetTaskById(ctx *fiber.Ctx) error
-	UpdateTask(ctx *fiber.Ctx) error
-	DeleteTask(ctx *fiber.Ctx) error
-	DeleteUser(ctx *fiber.Ctx) error
+type TaskService interface {
+	CreateTask(ctx context.Context, req TaskRequest) (int, error)
+	GetTaskById(ctx context.Context, id int) (repo.Task, error)
+	UpdateTask(ctx context.Context, id int, req TaskRequest) (int, error)
+	DeleteTask(ctx context.Context, id int) (int, error)
 }
 
-type service struct {
+type taskService struct {
 	repo repo.Repository
 	log  *zap.SugaredLogger
 }
 
-func NewService(repo repo.Repository, logger *zap.SugaredLogger) Service {
-	return &service{
+func NewService(repo repo.Repository, logger *zap.SugaredLogger) TaskService {
+	return &taskService{
 		repo: repo,
 		log:  logger,
 	}
 }
 
-func (s *service) CreateTask(ctx *fiber.Ctx) error {
-	var req TaskRequest
-	if err := ctx.BodyParser(&req); err != nil {
-		s.log.Error("Request Body Error", zap.Error(err))
-		return dto.BadResponseError(ctx, dto.FieldBadFormat, "Invalid request body")
-	}
+func (s *taskService) CreateTask(ctx context.Context, req TaskRequest) (int, error) {
 	task := repo.Task{
 		UserId:      req.UserId,
 		Title:       req.Title,
 		Description: req.Description,
 	}
-	exists, err := s.repo.CheckUserExists(ctx.Context(), req.UserId)
-	if err != nil {
-		s.log.Error("Check User Error", zap.Error(err))
-	}
-	if !exists {
-		s.log.Error("User Not Found")
-		return dto.BadResponseError(ctx, dto.FieldIncorrect, "User Not Found")
-	}
-	taskID, err := s.repo.CreateTask(ctx.Context(), task)
+	taskID, err := s.repo.CreateTask(ctx, task)
 	if err != nil {
 		s.log.Error("Create Task Error", zap.Error(err))
-		return dto.InternalServerError(ctx)
+		return 0, errors.New("create Task Error")
 	}
-
-	resp := dto.Response{
-		Status: "success",
-		Data:   map[string]int{"task_id": taskID},
-	}
-
-	return ctx.Status(fiber.StatusOK).JSON(resp)
+	s.log.Infof("Task created task ID: %d", taskID)
+	return taskID, nil
 }
 
-func (s *service) CreateUser(ctx *fiber.Ctx) error {
-	var req UserRequest
-	if err := ctx.BodyParser(&req); err != nil {
-		s.log.Error("Request Body Error", zap.Error(err))
-		return dto.BadResponseError(ctx, dto.FieldBadFormat, "Invalid request body")
-	}
-	user := repo.User{
-		Username: req.UserName,
-		Password: req.Password,
-	}
-	UserID, err := s.repo.CreateUser(ctx.Context(), user)
-	if err != nil {
-		s.log.Error("User Exists", zap.Error(err))
-		return dto.BadResponseError(ctx, dto.FieldIncorrect, "User Exists")
-	}
-	resp := dto.Response{
-		Status: "success",
-		Data:   map[string]int{"user_id": UserID},
-	}
-	return ctx.Status(fiber.StatusOK).JSON(resp)
-}
-
-func (s *service) GetTasksByUsername(ctx *fiber.Ctx) error {
-	username := ctx.Params("username")
-
-	tasks, err := s.repo.GetTasksByUsername(ctx.Context(), username)
-	if err != nil {
-		s.log.Error("Get Tasks Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.NotFound, "User Not Found")
-	}
-	if tasks == nil {
-		return dto.NotFoundError(ctx, dto.NotFound, "No tasks found")
-	}
-	resp := dto.Response{
-		Status: "success",
-		Data:   tasks,
-	}
-	return ctx.Status(fiber.StatusOK).JSON(resp)
-}
-func (s *service) GetTaskById(ctx *fiber.Ctx) error {
-	id, err := strconv.Atoi(ctx.Params("id"))
+func (s *taskService) GetTaskById(ctx context.Context, id int) (repo.Task, error) {
+	task, err := s.repo.GetTaskById(ctx, id)
 	if err != nil {
 		s.log.Error("Get Task Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.FieldBadFormat, "Bad id")
+		return repo.Task{}, errors.New("task not found")
 	}
 
-	task, err := s.repo.GetTaskById(ctx.Context(), id)
-	if err != nil {
-		s.log.Error("Get Task Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.NotFound, "Task Not Found")
-	}
-	resp := dto.Response{
-		Status: "success",
-		Data:   task,
-	}
-	return ctx.Status(fiber.StatusOK).JSON(resp)
+	return task, nil
 }
-func (s *service) UpdateTask(ctx *fiber.Ctx) error {
-	id, err := strconv.Atoi(ctx.Params("id"))
-	if err != nil {
-		s.log.Error("Update Task Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.FieldBadFormat, "Bad id")
-	}
-	var req TaskRequest
-	if err := ctx.BodyParser(&req); err != nil {
-		s.log.Error("Request Body Error", zap.Error(err))
-		return dto.BadResponseError(ctx, dto.FieldBadFormat, "Invalid request body")
-	}
+
+func (s *taskService) UpdateTask(ctx context.Context, id int, req TaskRequest) (int, error) {
 	task := repo.Task{
 		UserId:      req.UserId,
 		Title:       req.Title,
 		Description: req.Description,
 		Status:      req.Status,
 	}
-	exists, err := s.repo.CheckUserExists(ctx.Context(), req.UserId)
-	if err != nil {
-		s.log.Error("Check User Error", zap.Error(err))
-		return dto.BadResponseError(ctx, dto.FieldBadFormat, "Invalid request body")
-	}
-	if !exists {
-		s.log.Error("User Not Found")
-		return dto.BadResponseError(ctx, dto.NotFound, "User Not Found")
-	}
-	id, err = s.repo.UpdateTask(ctx.Context(), id, task)
+
+	id, err := s.repo.UpdateTask(ctx, id, task)
 	if err != nil {
 		s.log.Error("Update Task Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.NotFound, "Task Not Found")
+		return 0, errors.New("task not found")
 	}
-	resp := dto.Response{
-		Status: "success",
-		Data:   id,
-	}
-	return ctx.Status(fiber.StatusOK).JSON(resp)
-}
-func (s *service) DeleteTask(ctx *fiber.Ctx) error {
-	id, err := strconv.Atoi(ctx.Params("id"))
-	if err != nil {
-		s.log.Error("Delete Task Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.FieldBadFormat, "Bad id")
-	}
-	taskID, err := s.repo.DeleteTask(ctx.Context(), id)
-	if err != nil {
-		s.log.Error("Delete Task Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.NotFound, "Task Not Found")
-	}
-	resp := dto.Response{
-		Status: "success",
-		Data:   taskID,
-	}
-	return ctx.Status(fiber.StatusOK).JSON(resp)
+	return id, nil
 }
 
-func (s *service) DeleteUser(ctx *fiber.Ctx) error {
-	UserId, err := strconv.Atoi(ctx.Params("user_id"))
+func (s *taskService) DeleteTask(ctx context.Context, id int) (int, error) {
+	taskID, err := s.repo.DeleteTask(ctx, id)
 	if err != nil {
-		s.log.Error("Delete User Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.FieldBadFormat, "Bad id")
+		s.log.Error("Delete Task Error", zap.Error(err))
+		return 0, errors.New("delete Task Error")
 	}
-	id, err := s.repo.DeleteUser(ctx.Context(), UserId)
-	if err != nil {
-		s.log.Error("Delete User Error", zap.Error(err))
-		return dto.NotFoundError(ctx, dto.NotFound, "User Not Found")
-	}
-	resp := dto.Response{
-		Status: "success",
-		Data:   id,
-	}
-	return ctx.Status(fiber.StatusOK).JSON(resp)
+	return taskID, nil
 }
